@@ -1,0 +1,217 @@
+<html style="margin:0; padding:0; overflow:hidden;">
+	<head>
+		<script id="shader-fs" type="x-shader/x-fragment">
+		#define PI 3.1415926538
+		#define MAX_STEPS 100
+		#define SURFACE_DIST 0.01
+		#define MAX_DIST 100.0
+		#define FOV 75.0
+		
+		uniform mediump vec2 screenRes;
+		uniform mediump vec3 movPos;
+		
+		mediump float sdSphere(mediump vec3 p, mediump float radius) {
+			return length(p) - radius;
+		}
+		
+		mediump float checkScene(mediump vec3 p){
+			return length(p - vec3(0.,0.,5.)) - 1.;
+		}
+		
+		mediump float rayMarch(mediump vec3 origin, mediump vec3 direction){
+			mediump float d0 = 0.;
+			for(int i = 0; i<MAX_STEPS; i++){
+				mediump vec3 p = origin+direction*d0;
+				mediump float ds = checkScene(p);
+				d0 += ds;
+				if(ds<SURFACE_DIST || d0 > MAX_DIST) break;
+			}
+			return d0;
+		}
+		
+		void main(void) {
+			// generate ray
+			mediump vec3 origin = vec3 (0, 0, 0);
+			
+			// coordinate of the pixel to square
+			mediump vec2 uv = (2.*(gl_FragCoord.xy-0.5)/screenRes.xy-1.);
+			
+			// direction of ray
+			mediump vec3 dir = normalize(vec3(uv.x * (screenRes.x/screenRes.y), uv.y, 1.));
+			
+			// raymarch loop
+			bool hit = false;
+			mediump float d0 = 0.;
+			for(int i = 0; i < MAX_STEPS; i++){
+				mediump vec3 p = origin + dir * d0;
+				mediump float ds = length(p-movPos) - 1.;
+				d0 += ds;
+				if(ds<SURFACE_DIST) hit = true;
+				if(ds<SURFACE_DIST || d0 > MAX_DIST) break;
+			}
+			
+			// color assignment
+			if(hit){
+				gl_FragColor = vec4(1., 1. , 1., 1.);
+			} else {
+				gl_FragColor = vec4(0., 0., 0., 1.);
+			}
+			
+			mediump float d = d0 / MAX_DIST;
+			gl_FragColor = vec4(d, d, d, 1.);
+		}
+		</script>
+		<script id="shader-vs" type="x-shader/x-vertex">
+			attribute vec3 coordinates;
+			void main(void) {
+				gl_Position = vec4(coordinates, 1.);
+			}
+		</script>
+		<script type = "application/x-javascript">
+		// WEBGL STUFF
+		var canvas;
+		var gl;
+		var shaderProgram;
+		// WebGL initialization
+		function initWebGL(canvas){
+			try {
+				gl = canvas.getContext("experimental-webgl");
+				//gl.viewport(0, 0, canvas.width, canvas.height);
+			} catch(e){
+				alert("could not initialise WebGl Experimental");
+			}
+		}
+		// Single shader initialization
+		function getShader(gl, id)
+		{
+			var shaderScript = document.getElementById(id);
+			
+			if (!shaderScript)
+			return null;
+			
+			var shader;
+			
+			if (shaderScript.type == "x-shader/x-fragment")
+			{
+				shader = gl.createShader(gl.FRAGMENT_SHADER);
+			} else if (shaderScript.type == "x-shader/x-vertex") {
+				shader = gl.createShader(gl.VERTEX_SHADER);
+			} else {
+				return null;
+			}
+			
+			gl.shaderSource(shader, shaderScript.textContent);
+			gl.compileShader(shader);
+			
+			if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS))
+			{
+				alert(gl.getShaderInfoLog(shader));
+				return null;
+			}
+			
+			return shader;
+		}
+		// Shader program initialization
+		function initShaders()
+		{
+			var fragmentShader = getShader(gl, "shader-fs");
+			var vertexShader = getShader(gl, "shader-vs");
+			
+			shaderProgram = gl.createProgram();
+			
+			gl.attachShader(shaderProgram, vertexShader);
+			gl.attachShader(shaderProgram, fragmentShader);
+			
+			gl.linkProgram(shaderProgram);
+			
+			if (!gl.getProgramParameter(shaderProgram, gl.LINK_STATUS))
+			{
+				alert("Could not initialise shaders");
+			}
+			
+			gl.useProgram(shaderProgram);
+		}
+		
+		function initBuffers(){
+			var vertices = [
+            -1.0,1.0,0.0,
+            -1.0,-1.0,0.0,
+            1.0,-1.0,0.0,
+            1.0,1.0,0.0, 
+         ];
+         
+         indices = [0,1,2,0,2,3];
+         
+         // Create and pass data to array buffer
+         var vertex_buffer = gl.createBuffer();
+         gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
+         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(vertices), gl.STATIC_DRAW);
+         gl.bindBuffer(gl.ARRAY_BUFFER, null);
+		 
+		 // Create and pass data to index buffer
+         var Index_Buffer = gl.createBuffer();
+         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Index_Buffer);
+         gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(indices), gl.STATIC_DRAW);
+         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+		 
+		 // Associate shaders to buffer objects
+         gl.bindBuffer(gl.ARRAY_BUFFER, vertex_buffer);
+         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, Index_Buffer);
+		 
+		 // Enable shader attribute
+         var coord = gl.getAttribLocation(shaderProgram, "coordinates");
+         gl.vertexAttribPointer(coord, 3, gl.FLOAT, false, 0, 0); 
+         gl.enableVertexAttribArray(coord);
+		 
+		}
+		// Initialization of canvas, context and program
+		function webGLStart()
+		{
+			canvas = document.getElementById("canvas");
+			initWebGL(canvas);
+			resizeCanvas();
+			initShaders();
+			
+			gl.clearColor(0.0, 0.0, 0.0, 1.0);
+			gl.clearDepth(1.0);
+			
+			initBuffers();
+		}
+		
+		function resizeCanvas(sWidth = window.innerWidth, sHeight = window.innerHeight){
+			canvas.width = sWidth;
+			canvas.height = sHeight;
+			gl.viewport(0, 0, canvas.width, canvas.height);
+			if(shaderProgram) var screenRes = gl.getUniformLocation(shaderProgram, "screenRes");
+			gl.uniform2f(screenRes, canvas.width, canvas.height);
+		}
+		
+		function draw(){
+			gl.clearColor(0.5, 0.5, 0.5, 0.9);
+			gl.enable(gl.DEPTH_TEST);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+			gl.drawElements(gl.TRIANGLES, indices.length, gl.UNSIGNED_SHORT,0);
+		}
+		// WEBGL END
+		
+		
+		// Main loop
+		var t = 0;
+		function animate(){
+			// deltaTime
+			t += 0.01;
+			
+			// Events
+			var movPos = gl.getUniformLocation(shaderProgram, "movPos");
+			gl.uniform3f(movPos, 0.0, 0.0, t*10);
+			
+			draw();
+			
+			window.requestAnimationFrame(animate);
+		}
+	</script>
+	</head>
+	<body onload="webGLStart(); resizeCanvas(160,80); animate();" style="overflow: hidden;">
+	<canvas id="canvas" style="left:0; top:0; position:absolute; overflow:hidden; width:100%; height:100%;"></canvas>
+	</body>
+</html>
